@@ -1,0 +1,21 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+
+
+terraform.tfvars
+*.auto.tfvars
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+
+__pycache__/
+*.pyc
+.venv/
+
+# Dane testowe
+dane_testowe/
