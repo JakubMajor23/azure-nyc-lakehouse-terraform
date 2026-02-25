@@ -23,7 +23,7 @@ Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architektur
 
 ## Architektura
 
-![Architektura](photos/2.png)
+![Architektura](photos/t.png)
 
 > **Storage:** Wszystkie warstwy (Bronze/Silver/Gold) → Azure Data Lake Storage Gen2
 
