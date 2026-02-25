@@ -5,8 +5,6 @@ Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architektur
 > **Źródło danych:** [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
 > **Zakres:** Yellow Taxi, styczeń 2021 – listopad 2025 (~200M rekordów)
 
-![Azure Resource Group — wszystkie zasoby projektu](photos/1.png)
-
 ---
 
 ## Spis treści
@@ -25,19 +23,7 @@ Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architektur
 
 ## Architektura
 
-```mermaid
-flowchart LR
-    A["🌐 NYC TLC API\n(Parquet files)"] -->|Azure Data Factory| B["🥉 BRONZE\n(raw data)"]
-    B -->|Synapse SQL| C["🥈 SILVER\n(cleaned)"]
-    C -->|Synapse SQL| D["🥇 GOLD\n(aggregated)"]
-    D -->|DirectQuery| E["📊 Power BI\n(dashboards)"]
-
-    style A fill:#1a1a2e,stroke:#4cc9f0,stroke-width:2px,color:#fff
-    style B fill:#1a1a2e,stroke:#cd7f32,stroke-width:2px,color:#fff
-    style C fill:#1a1a2e,stroke:#c0c0c0,stroke-width:2px,color:#fff
-    style D fill:#1a1a2e,stroke:#ffd700,stroke-width:2px,color:#fff
-    style E fill:#1a1a2e,stroke:#f72585,stroke-width:2px,color:#fff
-```
+![Architektura](photos/2.png)
 
 > **Storage:** Wszystkie warstwy (Bronze/Silver/Gold) → Azure Data Lake Storage Gen2
 
@@ -49,6 +35,7 @@ flowchart LR
 
 ### Użyte technologie
 
+
 | Komponent | Technologia |
 |-----------|-------------|
 | IaC | Terraform |
@@ -58,7 +45,7 @@ flowchart LR
 | Wizualizacja | Power BI (DirectQuery) |
 | Autoryzacja | Managed Identity|
 
-![Azure Portal → Resource Group → lista zasobów (ADF, Synapse, Storage Account, etc.)](photos/2.png)
+![Azure Resource Group — wszystkie zasoby projektu](photos/1.png)
 
 ---
 
