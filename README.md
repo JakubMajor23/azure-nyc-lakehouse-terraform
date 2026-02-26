@@ -35,13 +35,12 @@ Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architektur
 
 ### Użyte technologie
 
-
 | Komponent | Technologia |
 |-----------|-------------|
 | IaC | Terraform |
 | Ingestion | Azure Data Factory |
 | Storage | Azure Data Lake Storage Gen2 |
-| Processing | Azure Synapse Analytics (Serverless SQL) |
+| Processing | Azure Synapse Analytics |
 | Wizualizacja | Power BI (DirectQuery) |
 | Autoryzacja | Managed Identity|
 
@@ -61,7 +60,7 @@ Cała infrastruktura zdefiniowana jako kod (IaC) w plikach `.tf`:
 | `pipeline.tf` | ADF Linked Services, Datasets, Pipelines (ingestion) |
 | `synapse.tf` | Synapse Workspace (Serverless SQL Pool) |
 | `security.tf` | Role assignments, Managed Identity |
-| `variables.tf` | Zmienne (prefix, location) |
+| `variables.tf` | Zmienne|
 | `outputs.tf` | Outputy (nazwy zasobów, URLs) |
 
 ### Deployment
@@ -71,6 +70,34 @@ terraform init
 terraform plan
 terraform apply
 ```
+
+---
+
+## Ingestion — Bronze Layer
+
+Azure Data Factory pobiera pliki Parquet z NYC TLC API i zapisuje je w ADLS Gen2 (Bronze).
+
+### Pipeline
+
+```
+pl_ingest_year (ForEach month 01-12)
+  └── pl_ingest_single_month (Copy Activity)
+        Source: https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet
+        Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
+```
+
+| Parametr | Wartość |
+|----------|---------|
+| Równoległość | 4 miesiące jednocześnie |
+| Retry | 2 próby, 30s przerwa |
+| Timeout | 1h na plik |
+| Kompresja | Snappy |
+
+> ** Błedy w pipline wynikaja z tego ze za grudzien 2026 nie ma jszcze dostepnych plików a pipline próbował je pobrać** 
+
+![Azure Data Factory → Pipeline "pl_ingest_year" → widok edytora z ForEach](photos/adf_1.png)
+![Azure Data Factory → Monitor → zakończone pipeline runy](photos/adf_2.png)
+![Azure Portal → Storage Account → Containers → bronze → yellow_tripdata → lista folderów z latami](photos/adf_3.png)
 
 
 
