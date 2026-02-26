@@ -153,3 +153,123 @@ Dzięki temu Gold Layer może filtrować po `trip_status = 'valid'` dla czystych
 ![Azure Portal → Storage → silver container → yellow_taxi_cleaned → pliki Parquet](photos/bronze_silver_2.png)
 
 
+---
+
+## Transformacja — Silver → Gold
+
+**Skrypt:** `sql/02_silver_to_gold.sql`
+
+Gold to warstwa biznesowa — zagregowane KPI gotowe do wizualizacji w Power BI.
+
+> **Ważne:** Wszystkie tabele Gold filtrują `trip_status = 'valid'` — korekty nie psują KPI.
+
+### Tabele Gold
+
+#### 1. `gold.daily_revenue_summary`
+
+| Kolumna | Opis |
+|---------|------|
+| `trip_date` | Data (dzień) |
+| `total_trips` | Liczba kursów |
+| `total_revenue` | Łączny przychód |
+| `avg_trip_cost` | Średni koszt kursu |
+| `avg_tip` | Średni napiwek |
+| `avg_distance_miles` | Średni dystans |
+| `revenue_per_mile` | Efektywność (przychód/mila) |
+
+#### 2. `gold.popular_zones`
+
+Popularne trasy — które strefy generują najwięcej kursów i przychodów.
+
+| Kolumna | Opis |
+|---------|------|
+| `pickup_location_id` | Strefa odbioru |
+| `dropoff_location_id` | Strefa docelowa |
+| `trip_count` | Liczba kursów na trasie |
+| `total_revenue` | Przychód z trasy |
+| `avg_distance` | Średni dystans trasy |
+
+#### 3. `gold.hourly_patterns`
+
+Wzorce godzinowe — kiedy w NYC jeżdżą taksówkami.
+
+| Kolumna | Opis |
+|---------|------|
+| `trip_weekday` | Dzień tygodnia |
+| `pickup_hour` | Godzina (0-23) |
+| `trip_count` | Liczba kursów |
+| `avg_total_amount` | Średnia kwota |
+
+#### 4. `gold.vw_payment_breakdown` (VIEW)
+
+| Kolumna | Opis |
+|---------|------|
+| `payment_method` | Nazwa metody (Credit Card, Cash, Dispute...) |
+| `trip_count` | Liczba kursów |
+| `tip_percentage` | % napiwku od fare |
+
+#### 5. `gold.corrections_summary`
+
+| Kolumna | Opis |
+|---------|------|
+| `payment_method` | Nazwa metody płatności |
+| `pickup_location_id` | Strefa odbioru |
+| `correction_count` | Liczba korekt |
+| `total_refunded_amount` | Łączna kwota zwrotów |
+
+
+![Synapse Studio → SQL Script → uruchomiony 02_silver_to_gold.sql](photos/silver_gold_1.png)
+![Azure Portal → Storage → gold container → lista folderów](photos/silver_gold_2.png)
+![Synapse Studio → SELECT FROM gold.daily_revenue_summary → wynik tabelaryczny](photos/silver_gold_3.png)
+
+---
+
+## Testy jakości danych
+
+### Silver Tests (`sql/03_tests_silver.sql`) — 18 testów
+
+![Synapse Studio → uruchomiony 03_tests_silver.sql → wyniki](photos/silver_test.png)
+
+### Gold Tests (`sql/04_tests_gold.sql`) — 17 testów
+
+![Synapse Studio → uruchomiony 04_tests_gold.sql → wyniki](photos/gold_test.png)
+
+---
+
+## Uruchomienie projektu
+
+### Wymagania
+
+- Azure CLI (`az login`)
+- Terraform >= 1.0
+- Python 3.x + pandas (do lokalnych testów)
+
+### Krok po kroku
+
+```bash
+# 1. Infrastruktura
+cp terraform.tfvars.example terraform.tfvars
+# Edytuj terraform.tfvars
+terraform init
+terraform plan
+terraform apply
+```
+
+```bash
+# 2. Ingestion — uruchom pipeline w ADF
+# Azure Portal → Data Factory → pl_ingest_all → Trigger
+```
+
+```sql
+-- 3. Synapse — uruchom skrypty SQL w kolejności:
+-- sql/00_setup.sql        ← baza danych, credentials, data sources
+-- sql/01_bronze_to_silver.sql  ← transformacja Bronze → Silver
+-- sql/03_tests_silver.sql      ← walidacja Silver
+-- sql/02_silver_to_gold.sql    ← transformacja Silver → Gold
+-- sql/04_tests_gold.sql        ← walidacja Gold
+```
+
+## Dashboardy Power BI
+
+Już w krótce ...
+
