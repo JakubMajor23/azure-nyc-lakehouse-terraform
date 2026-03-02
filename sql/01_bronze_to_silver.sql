@@ -91,7 +91,7 @@ SELECT
     DATENAME(WEEKDAY, tpep_pickup_datetime)           AS trip_weekday,
     DATEPART(HOUR, tpep_pickup_datetime)              AS pickup_hour,
     CASE
-        WHEN fare_amount <= 0 OR total_amount <= 0 THEN 'correction'
+        WHEN fare_amount <= 0 OR total_amount <= 0 OR total_amount > 1000 THEN 'correction'
         ELSE 'valid'
     END                                               AS trip_status
 

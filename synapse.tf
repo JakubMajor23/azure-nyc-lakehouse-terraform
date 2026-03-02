@@ -13,6 +13,8 @@ resource "azurerm_synapse_workspace" "synapse" {
   tags = var.tags
 }
 
+# DEV ONLY — DHCP/NAT makes static IP impractical for a student environment.
+# Production: use Azure Private Endpoints (no public access) or restrict to corporate IP ranges.
 resource "azurerm_synapse_firewall_rule" "allow_all" {
   name                 = "AllowAll"
   synapse_workspace_id = azurerm_synapse_workspace.synapse.id

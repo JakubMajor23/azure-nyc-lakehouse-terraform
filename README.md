@@ -1,73 +1,76 @@
-# Azure NYC Taxi — Data Lakehause
+[![en](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
+[![pl](https://img.shields.io/badge/lang-Polski-red.svg)](README_PL.md)
 
-Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architekturze Medallion (Bronze → Silver → Gold).
+# Azure NYC Taxi — Data Lakehouse
 
-> **Źródło danych:** [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
-> **Zakres:** Yellow Taxi, styczeń 2021 – listopad 2025 (~200M rekordów)
+A data warehouse for NYC Yellow Taxi built on Azure using the Medallion architecture (Bronze → Silver → Gold).
+
+> **Data Source:** [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
+> **Scope:** Yellow Taxi, January 2021 – November 2025 (~200M records)
 
 ---
 
-## Spis treści
+## Table of Contents
 
-1. [Architektura](#architektura)
-2. [Infrastruktura (Terraform)](#infrastruktura-terraform)
+1. [Architecture](#architecture)
+2. [Infrastructure (Terraform)](#infrastructure-terraform)
 3. [Ingestion — Bronze Layer](#ingestion--bronze-layer)
-4. [Transformacja — Bronze → Silver](#transformacja--bronze--silver)
-5. [Transformacja — Silver → Gold](#transformacja--silver--gold)
-6. [Testy jakości danych](#testy-jakości-danych)
-7. [Uruchomienie projektu](#uruchomienie-projektu)
-8. [Dashboardy Power BI](#dashboardy-power-bi)
+4. [Transformation — Bronze → Silver](#transformation--bronze--silver)
+5. [Transformation — Silver → Gold](#transformation--silver--gold)
+6. [Data Quality Tests](#data-quality-tests)
+7. [Getting Started](#getting-started)
+8. [Power BI Dashboards](#power-bi-dashboards)
 
 
 ---
 
-## Architektura
+## Architecture
 
-![Architektura](photos/t.png)
+![Architecture](photos/t.png)
 
-> **Storage:** Wszystkie warstwy (Bronze/Silver/Gold) → Azure Data Lake Storage Gen2
+> **Storage:** All layers (Bronze/Silver/Gold) → Azure Data Lake Storage Gen2
 
-| Warstwa | Opis | Format | Lokalizacja |
-|---------|------|--------|-------------|
-| **Bronze** | Surowe dane bez zmian | Parquet (Snappy) | `bronze/yellow_tripdata/` |
-| **Silver** | Wyczyszczone, ustandaryzowane | Parquet (Snappy) | `silver/yellow_taxi_cleaned/` |
-| **Gold** | Zagregowane KPI i metryki | Parquet + Views | `gold/*/` |
+| Layer | Description | Format | Location |
+|-------|-------------|--------|----------|
+| **Bronze** | Raw data, no modifications | Parquet (Snappy) | `bronze/yellow_tripdata/` |
+| **Silver** | Cleaned & standardized | Parquet (Snappy) | `silver/yellow_taxi_cleaned/` |
+| **Gold** | Star Schema (KPIs) | Parquet | `gold/*/` |
 
-### Użyte technologie
+### Tech Stack
 
-| Komponent | Technologia |
-|-----------|-------------|
+| Component | Technology |
+|-----------|------------|
 | IaC | Terraform |
 | Ingestion | Azure Data Factory |
 | Storage | Azure Data Lake Storage Gen2 |
 | Processing | Azure Synapse Analytics |
-| Wizualizacja | Power BI (DirectQuery) |
-| Autoryzacja | Managed Identity|
+| Visualization | Power BI (DirectQuery) |
+| Authorization | Managed Identity |
 
-![Azure Resource Group — wszystkie zasoby projektu](photos/1.png)
+![Azure Resource Group — all project resources](photos/1.png)
 
 ---
 
-## Infrastruktura (Terraform)
+## Infrastructure (Terraform)
 
-Cała infrastruktura zdefiniowana jako kod (IaC) w plikach `.tf`:
+All infrastructure is defined as code (IaC) in `.tf` files:
 
-| Plik | Opis |
-|------|------|
+| File | Description |
+|------|-------------|
 | `main.tf` | Provider, Resource Group |
 | `storage.tf` | Storage Account, ADLS Gen2 filesystems (bronze, silver, gold) |
 | `data_factory.tf` | Azure Data Factory |
 | `pipeline.tf` | ADF Linked Services, Datasets, Pipelines (ingestion) |
 | `synapse.tf` | Synapse Workspace (Serverless SQL Pool) |
 | `security.tf` | Role assignments, Managed Identity |
-| `variables.tf` | Zmienne|
-| `outputs.tf` | Outputy (nazwy zasobów, URLs) |
+| `variables.tf` | Variables |
+| `outputs.tf` | Outputs (resource names, URLs) |
 
 ---
 
 ## Ingestion — Bronze Layer
 
-Azure Data Factory pobiera pliki Parquet z NYC TLC API i zapisuje je w ADLS Gen2 (Bronze).
+Azure Data Factory downloads Parquet files from the NYC TLC API and stores them in ADLS Gen2 (Bronze).
 
 ### Pipeline
 
@@ -78,198 +81,233 @@ pl_ingest_year (ForEach month 01-12)
         Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
 ```
 
-| Parametr | Wartość |
-|----------|---------|
-| Równoległość | 4 miesiące jednocześnie |
-| Retry | 2 próby, 30s przerwa |
-| Timeout | 1h na plik |
-| Kompresja | Snappy |
+| Parameter | Value |
+|-----------|-------|
+| Parallelism | 4 months concurrently |
+| Retry | 2 attempts, 30s interval |
+| Timeout | 1h per file |
+| Compression | Snappy |
 
-> ** Błedy w pipline wynikaja z tego ze za grudzien 2026 nie ma jszcze dostepnych plików a pipline próbował je pobrać** 
+> **Pipeline errors are caused by December 2025 files not yet being available at the time the pipeline attempted to download them.**
 
-![Azure Data Factory → Pipeline "pl_ingest_year" → widok edytora z ForEach](photos/adf_1.png)
-![Azure Data Factory → Monitor → zakończone pipeline runy](photos/adf_2.png)
-![Azure Portal → Storage Account → Containers → bronze → yellow_tripdata → lista folderów z latami](photos/adf_3.png)
+![Azure Data Factory → Pipeline "pl_ingest_year" → editor view with ForEach](photos/adf_1.png)
+![Azure Data Factory → Monitor → completed pipeline runs](photos/adf_2.png)
+![Azure Portal → Storage Account → Containers → bronze → yellow_tripdata → year folder list](photos/adf_3.png)
 
 
-## Transformacja — Bronze → Silver
+## Transformation — Bronze → Silver
 
-**Skrypt:** `sql/01_bronze_to_silver.sql`
+**Script:** `sql/01_bronze_to_silver.sql`
 
-Silver to wyczyszczona wersja danych Bronze. Strategia: **napraw co się da, usuń tylko błedne rekordy.**
+Silver is the cleaned version of Bronze data. Strategy: **fix what you can, only remove impossible records.**
 
-### Krok 1: Widok Bronze (OPENROWSET)
+### Step 1: Bronze View (OPENROWSET)
 
-Widok `bronze.vw_yellow_taxi_raw` czyta surowe pliki Parquet bezpośrednio z Data Lake.
+The view `bronze.vw_yellow_taxi_raw` reads raw Parquet files directly from the Data Lake.
 
-> **Uwaga:** Kolumna `airport_fee` ma różną wielkość liter między latami (`airport_fee` w 2021, `Airport_fee` w 2025). Rozwiązanie: czytamy obie wersje i łączymy `COALESCE`.
+> **Note:** The `airport_fee` column has inconsistent casing across years (`airport_fee` in 2021, `Airport_fee` in 2025). Solution: read both versions and merge with `COALESCE`.
 
-### Krok 2: Naprawianie NULLi (COALESCE)
+### Step 2: Fixing NULLs (COALESCE)
 
-Zamiast usuwać wiersze z NULLami (~24% danych!), naprawiamy je sensownymi wartościami domyślnymi:
+Instead of dropping rows with NULLs (~24% of data!), we fill them with sensible defaults:
 
-| Kolumna | Problem | Rozwiązanie |
-|---------|---------|-------------|
-| `passenger_count` | 24% NULL | → `1` (domyślnie 1 pasażer) |
-| `RatecodeID` | 24% NULL | → `1` (taryfa standardowa) |
-| `store_and_fwd_flag` | 24% NULL | → `'N'` (nie przechowywano) |
+| Column | Issue | Fix |
+|--------|-------|-----|
+| `passenger_count` | 24% NULL | → `1` (default 1 passenger) |
+| `RatecodeID` | 24% NULL | → `1` (standard rate) |
+| `store_and_fwd_flag` | 24% NULL | → `'N'` (not stored) |
 | `congestion_surcharge` | 24% NULL | → `0.00` |
 | `airport_fee` | 24-91% NULL | → `0.00` |
-| `cbd_congestion_fee` | nie istnieje do 2024 | → `0.00` |
+| `cbd_congestion_fee` | doesn't exist before 2024 | → `0.00` |
 
-### Krok 3: Filtrowanie (WHERE)
+### Step 3: Filtering (WHERE)
 
-Usuwamy **tylko fizycznie niemożliwe rekordy** (~4.5% danych):
+We remove **only physically impossible records** (~4.5% of data):
 
-| Filtr | Usunięte | Dlaczego |
-|-------|----------|----------|
-| `VendorID IN (1,2)` | 1.54% | Vendor 7 ma 100% zepsutych dat, Vendor 6 nieoficjalny |
-| `trip_distance > 0 AND < 500` | 2.62% | Zerowy dystans = anulacja/błąd GPS |
-| `pickup < dropoff` | 1.49% | 97% to Vendor 7 (odwrócone daty) |
-| `duration 1-1440 min` | 2.56% | < 1 min = test taksometru, > 24h = zapomniany |
-| `LocationID 1-265` | 0.00% | Lokalizacje poza NYC |
-| `Date 2021-2025` | 0.00% | Dane spoza zakresu ingestion |
+| Filter | Removed | Reason |
+|--------|---------|--------|
+| `VendorID IN (1,2)` | 1.54% | Vendor 7 has 100% broken dates, Vendor 6 unofficial |
+| `trip_distance > 0 AND < 500` | 2.62% | Zero distance = cancellation/GPS error |
+| `pickup < dropoff` | 1.49% | 97% from Vendor 7 (reversed timestamps) |
+| `duration 1-1440 min` | 2.56% | < 1 min = meter test, > 24h = forgotten |
+| `LocationID 1-265` | 0.00% | Locations outside NYC |
+| `Date 2021-2025` | 0.00% | Data outside ingestion range |
 
-> **Łącznie usunięto: ~4.5% | Zachowano: ~95.5%**
+> **Total removed: ~4.5% | Retained: ~95.5%**
 
-### Krok 4: Flaga `trip_status`
+### Step 4: `trip_status` Flag
 
-Ujemne kwoty (zwroty, reklamacje, spory) **nie są usuwane** — są oznaczone flagą:
+Negative amounts (refunds, complaints, disputes) **are not deleted** — they are flagged:
 
-| `trip_status` | Opis | Udział |
-|---------------|------|--------|
-| `valid` | Normalny kurs | ~87% |
-| `correction` | Zwrot/reklamacja (ujemny fare lub total) | ~8.5% |
+| `trip_status` | Description | Share |
+|---------------|-------------|-------|
+| `valid` | Normal trip | ~87% |
+| `correction` | Refund/complaint (negative fare, negative total, or total > 1000) | ~8.5% |
 
-Dzięki temu Gold Layer może filtrować po `trip_status = 'valid'` dla czystych KPI, a korekty są dalej dostępne do osobnej analizy.
+This allows the Gold Layer to filter by `trip_status = 'valid'` for clean KPIs, while corrections remain available for separate analysis.
 
-### Krok 5: Standaryzacja kolumn
+### Step 5: Column Standardization
 
-- Nazwy → `snake_case` (np. `VendorID` → `vendor_id`)
-- Typy → `DECIMAL(10,2)` dla kwot, `INT` dla identyfikatorów
-- Kolumny pochodne: `trip_duration_minutes`, `trip_year`, `trip_month`, `trip_day`, `trip_weekday`, `pickup_hour`
+- Names → `snake_case` (e.g. `VendorID` → `vendor_id`)
+- Types → `DECIMAL(10,2)` for monetary amounts, `INT` for identifiers
+- Derived columns: `trip_duration_minutes`, `trip_year`, `trip_month`, `trip_day`, `trip_weekday`, `pickup_hour`
 
-![Synapse Studio → SQL Script → uruchomiony 01_bronze_to_silver.sql](photos/bronze_silver_1.png)
-![Azure Portal → Storage → silver container → yellow_taxi_cleaned → pliki Parquet](photos/bronze_silver_2.png)
+![Synapse Studio → SQL Script → running 01_bronze_to_silver.sql](photos/bronze_silver_1.png)
+![Azure Portal → Storage → silver container → yellow_taxi_cleaned → Parquet files](photos/bronze_silver_2.png)
 
 
 ---
 
-## Transformacja — Silver → Gold
+## Transformation — Silver → Gold
 
-**Skrypt:** `sql/02_silver_to_gold.sql`
+**Script:** `sql/02_silver_to_gold.sql`
 
-Gold to warstwa biznesowa — zagregowane KPI gotowe do wizualizacji w Power BI.
+Gold is the business layer ready for BI tools (e.g. Power BI).
+It is built as a **Star Schema** which provides native performance, easy DAX measure creation, and a unified time dimension.
 
-> **Ważne:** Wszystkie tabele Gold filtrują `trip_status = 'valid'` — korekty nie psują KPI.
+### Star Schema (Entity Relationship)
 
-### Tabele Gold
+```mermaid
+erDiagram
+    dim_date ||--o{ fact_trips : date_key
+    dim_payment_type ||--o{ fact_trips : payment_key
+    dim_date ||--o{ fact_corrections : date_key
+    dim_payment_type ||--o{ fact_corrections : payment_key
 
-#### 1. `gold.daily_revenue_summary`
+    dim_date {
+        int date_key PK
+        date full_date
+        int year
+        int month
+        int day
+        varchar day_name
+        varchar month_name
+        varchar year_month
+        int weekday_num
+        int quarter
+    }
 
-| Kolumna | Opis |
-|---------|------|
-| `trip_date` | Data (dzień) |
-| `total_trips` | Liczba kursów |
-| `total_revenue` | Łączny przychód |
-| `avg_trip_cost` | Średni koszt kursu |
-| `avg_tip` | Średni napiwek |
-| `avg_distance_miles` | Średni dystans |
-| `revenue_per_mile` | Efektywność (przychód/mila) |
+    dim_payment_type {
+        int payment_key PK
+        varchar payment_name
+        varchar payment_category
+    }
 
-#### 2. `gold.popular_zones`
+    fact_trips {
+        int date_key FK
+        int payment_key FK
+        int pickup_location_id
+        int dropoff_location_id
+        int pickup_hour
+        int trip_count
+        int total_passengers
+        decimal total_revenue
+        decimal total_fare
+        decimal total_tips
+        decimal total_tolls
+        decimal total_congestion
+        decimal total_extra
+        decimal total_mta_tax
+        decimal total_improvement
+        decimal total_airport_fee
+        decimal total_distance_miles
+        decimal total_duration_minutes
+        decimal avg_trip_cost
+        decimal avg_fare
+        decimal avg_tip
+        decimal avg_distance_miles
+        decimal avg_duration_minutes
+        decimal revenue_per_mile
+    }
 
-Popularne trasy — które strefy generują najwięcej kursów i przychodów.
+    fact_corrections {
+        int date_key FK
+        int payment_key FK
+        int pickup_location_id
+        int correction_count
+        decimal total_refunded_fare
+        decimal total_refunded_amount
+        decimal avg_refunded_fare
+    }
+```
 
-| Kolumna | Opis |
-|---------|------|
-| `pickup_location_id` | Strefa odbioru |
-| `dropoff_location_id` | Strefa docelowa |
-| `trip_count` | Liczba kursów na trasie |
-| `total_revenue` | Przychód z trasy |
-| `avg_distance` | Średni dystans trasy |
+> **Important:** The `trip_status` flag is used when splitting into fact tables: `fact_trips` takes only valid trips, while `fact_corrections` separately aggregates refunds and complaints to avoid skewing the main financial KPIs.
 
-#### 3. `gold.hourly_patterns`
+### Tables (Dimensions & Facts)
 
-Wzorce godzinowe — kiedy w NYC jeżdżą taksówkami.
+#### `gold.dim_date`
+Calendar dimension with attributes such as day names, month names, and composite keys (`year_month` for Power BI). Enables Time Intelligence in aggregations.
 
-| Kolumna | Opis |
-|---------|------|
-| `trip_weekday` | Dzień tygodnia |
-| `pickup_hour` | Godzina (0-23) |
-| `trip_count` | Liczba kursów |
-| `avg_total_amount` | Średnia kwota |
+#### `gold.dim_payment_type`
+Payment method lookup table with mapped categories (Credit Card, Cash, Others).
 
-#### 4. `gold.vw_payment_breakdown` (VIEW)
+#### `gold.fact_trips`
+Central fact table with data aggregated at the *date + hour + payment + pu_location + do_location* level. Contains all metrics (fares, tips, distance, duration).
 
-| Kolumna | Opis |
-|---------|------|
-| `payment_method` | Nazwa metody (Credit Card, Cash, Dispute...) |
-| `trip_count` | Liczba kursów |
-| `tip_percentage` | % napiwku od fare |
+#### `gold.fact_corrections`
+Separate table for analyzing cancellations and refunds, grouping negative trips.
 
-#### 5. `gold.corrections_summary`
-
-| Kolumna | Opis |
-|---------|------|
-| `payment_method` | Nazwa metody płatności |
-| `pickup_location_id` | Strefa odbioru |
-| `correction_count` | Liczba korekt |
-| `total_refunded_amount` | Łączna kwota zwrotów |
-
-
-![Synapse Studio → SQL Script → uruchomiony 02_silver_to_gold.sql](photos/silver_gold_1.png)
-![Azure Portal → Storage → gold container → lista folderów](photos/silver_gold_2.png)
-![Synapse Studio → SELECT FROM gold.daily_revenue_summary → wynik tabelaryczny](photos/silver_gold_3.png)
+![Synapse Studio → SQL Script → running 02_silver_to_gold.sql](photos/silver_gold_1.png)
+![Azure Portal → Storage → gold container → folder list](photos/silver_gold_2.png)
+![Synapse Studio → SELECT FROM gold.fact_trips → tabular results](photos/silver_gold_3.png)
 
 ---
 
-## Testy jakości danych
+## Data Quality Tests
 
-### Silver Tests (`sql/03_tests_silver.sql`) — 18 testów
+### Silver Tests (`sql/03_tests_silver.sql`) — 18 tests
 
-![Synapse Studio → uruchomiony 03_tests_silver.sql → wyniki](photos/silver_test.png)
+![Synapse Studio → running 03_tests_silver.sql → results](photos/silver_test.png)
 
-### Gold Tests (`sql/04_tests_gold.sql`) — 17 testów
+### Gold Tests (`sql/04_tests_gold.sql`) — 16 tests
 
-![Synapse Studio → uruchomiony 04_tests_gold.sql → wyniki](photos/gold_test.png)
+![Synapse Studio → running 04_tests_gold.sql → results](photos/gold_test.png)
 
 ---
 
-## Uruchomienie projektu
+## Getting Started
 
-### Wymagania
+### Prerequisites
 
 - Azure CLI (`az login`)
-- Terraform >= 1.0
-- Python 3.x + pandas (do lokalnych testów)
+- Terraform >= 1.5
+- Python 3.x + pandas (for local testing)
 
-### Krok po kroku
+### Step by Step
 
 ```bash
-# 1. Infrastruktura
+# 1. Infrastructure
 cp terraform.tfvars.example terraform.tfvars
-# Edytuj terraform.tfvars
+# Edit terraform.tfvars
 terraform init
 terraform plan
 terraform apply
 ```
 
 ```bash
-# 2. Ingestion — uruchom pipeline w ADF
+# 2. Ingestion — run the pipeline in ADF
 # Azure Portal → Data Factory → pl_ingest_all → Trigger
 ```
 
 ```sql
--- 3. Synapse — uruchom skrypty SQL w kolejności:
--- sql/00_setup.sql        ← baza danych, credentials, data sources
--- sql/01_bronze_to_silver.sql  ← transformacja Bronze → Silver
--- sql/03_tests_silver.sql      ← walidacja Silver
--- sql/02_silver_to_gold.sql    ← transformacja Silver → Gold
--- sql/04_tests_gold.sql        ← walidacja Gold
+-- 3. Synapse — run SQL scripts in order:
+-- sql/00_setup.sql             ← database, credentials, data sources
+-- sql/01_bronze_to_silver.sql  ← Bronze → Silver transformation
+-- sql/03_tests_silver.sql      ← Silver validation
+-- sql/02_silver_to_gold.sql    ← Silver → Gold transformation
+-- sql/04_tests_gold.sql        ← Gold validation
 ```
 
-## Dashboardy Power BI
+> **Note:** In `sql/00_setup.sql`, replace `<storage_account_name>` with the value from `terraform output datalake_name` and `<your_master_key_password>` with your own password.
 
-Już w krótce ...
+### Destroying Resources
 
+> **⚠️ Warning:** This will delete **all** Azure resources and data (Bronze/Silver/Gold). This action cannot be undone.
+
+```bash
+terraform destroy
+```
+
+## Power BI Dashboards
+
+Coming soon...

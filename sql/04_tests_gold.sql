@@ -1,139 +1,140 @@
--- daily_revenue_summary
+-- ===================
+-- 1. dim_date tests
+-- ===================
 
-SELECT 'G01: daily_revenue not empty' AS test,
+SELECT 'G01: dim_date not empty' AS test,
     CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS details
-FROM gold.daily_revenue_summary
+FROM gold.dim_date
 
 UNION ALL
 
-SELECT 'G02: total_revenue >= 0' AS test,
+SELECT 'G02: dates 2021-2025' AS test,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.daily_revenue_summary
+FROM gold.dim_date
+WHERE full_date < '2021-01-01' OR full_date >= '2026-01-01'
+
+UNION ALL
+
+SELECT 'G03: no duplicate date_key',
+    CASE WHEN MAX(cnt) = 1 THEN 'PASS' ELSE 'FAIL' END,
+    CAST(MAX(cnt) AS VARCHAR)
+FROM (SELECT date_key, COUNT(*) cnt FROM gold.dim_date GROUP BY date_key) t
+
+UNION ALL
+
+-- ===================
+-- 2. dim_payment_type
+-- ===================
+
+SELECT 'G04: dim_payment_type count = 7' AS test,
+    CASE WHEN COUNT(*) = 7 THEN 'PASS' ELSE 'FAIL' END AS result,
+    CAST(COUNT(*) AS VARCHAR) AS total_rows
+FROM gold.dim_payment_type
+
+UNION ALL
+
+SELECT 'G05: payment_category mapped' AS test,
+    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+    CAST(COUNT(*) AS VARCHAR) AS violations
+FROM gold.dim_payment_type
+WHERE payment_category NOT IN ('Credit Card', 'Cash', 'Others')
+
+UNION ALL
+
+-- ===================
+-- 3. fact_trips
+-- ===================
+
+SELECT 'G06: fact_trips not empty' AS test,
+    CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+    CAST(COUNT(*) AS VARCHAR) AS total_rows
+FROM gold.fact_trips
+
+UNION ALL
+
+SELECT 'G07: total_revenue >= 0' AS test,
+    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+    CAST(COUNT(*) AS VARCHAR) AS violations
+FROM gold.fact_trips
 WHERE total_revenue < 0
 
 UNION ALL
 
-SELECT 'G03: total_trips > 0' AS test,
+SELECT 'G08: trip_count > 0' AS test,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.daily_revenue_summary
-WHERE total_trips <= 0
-
-UNION ALL
-
-SELECT 'G04: avg_trip_cost 1-200' AS test,
-    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.daily_revenue_summary
-WHERE avg_trip_cost < 1 OR avg_trip_cost > 200
-
-UNION ALL
-
-SELECT 'G05: dates 2021-2025' AS test,
-    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.daily_revenue_summary
-WHERE trip_date < '2021-01-01' OR trip_date >= '2026-01-01'
-
-UNION ALL
-
-SELECT 'G06: no duplicate dates' AS test,
-    CASE WHEN MAX(cnt) = 1 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(MAX(cnt) AS VARCHAR) AS max_dupes
-FROM (SELECT trip_date, COUNT(*) cnt FROM gold.daily_revenue_summary GROUP BY trip_date) t
-
-UNION ALL
-
--- popular_zones
-
-SELECT 'G07: popular_zones not empty' AS test,
-    CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS total_rows
-FROM gold.popular_zones
-
-UNION ALL
-
-SELECT 'G08: zone locations 1-265' AS test,
-    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.popular_zones
-WHERE pickup_location_id < 1 OR pickup_location_id > 265
-   OR dropoff_location_id < 1 OR dropoff_location_id > 265
-
-UNION ALL
-
-SELECT 'G09: zone trip_count > 0' AS test,
-    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.popular_zones
+FROM gold.fact_trips
 WHERE trip_count <= 0
 
 UNION ALL
 
--- hourly_patterns
-
-SELECT 'G10: hourly_patterns not empty' AS test,
-    CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS total_rows
-FROM gold.hourly_patterns
-
-UNION ALL
-
-SELECT 'G11: pickup_hour 0-23' AS test,
+SELECT 'G09: avg_trip_cost <= 1000' AS test,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.hourly_patterns
-WHERE pickup_hour < 0 OR pickup_hour > 23
+FROM gold.fact_trips
+WHERE avg_trip_cost <= 0 OR avg_trip_cost > 1000
 
 UNION ALL
 
-SELECT 'G12: hourly trip_count > 0' AS test,
+SELECT 'G10: valid payment types' AS test,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS violations
-FROM gold.hourly_patterns
-WHERE trip_count <= 0
+FROM gold.fact_trips
+WHERE payment_key NOT IN (SELECT payment_key FROM gold.dim_payment_type)
 
 UNION ALL
 
--- corrections_summary
+-- ===================
+-- 4. fact_corrections
+-- ===================
 
-SELECT 'G13: corrections not empty' AS test,
+SELECT 'G11: fact_corrections not empty' AS test,
     CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS total_rows
-FROM gold.corrections_summary
+FROM gold.fact_corrections
 
 UNION ALL
 
-SELECT 'G14: corrections avg fare < 0' AS test,
+SELECT 'G12: correction_count is positive' AS test,
     CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CAST(COUNT(*) AS VARCHAR) AS non_negative
-FROM gold.corrections_summary
-WHERE avg_refunded_fare > 0
+    CAST(COUNT(*) AS VARCHAR) AS violations
+FROM gold.fact_corrections
+WHERE correction_count <= 0
 
 UNION ALL
 
--- Cross-layer consistency
+SELECT 'G13: valid payment types (corrections)' AS test,
+    CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+    CAST(COUNT(*) AS VARCHAR) AS violations
+FROM gold.fact_corrections
+WHERE payment_key NOT IN (SELECT payment_key FROM gold.dim_payment_type)
 
-SELECT 'G15: Gold = Silver valid count' AS test,
+UNION ALL
+
+-- ===================
+-- Cross-layer tests
+-- ===================
+
+SELECT 'G14: Gold = Silver valid count' AS test,
     CASE WHEN ABS(g.cnt - s.cnt) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CONCAT('Gold=', g.cnt, ' Silver=', s.cnt) AS info
-FROM (SELECT SUM(total_trips) cnt FROM gold.daily_revenue_summary) g,
+    CONCAT('Gold=', CAST(g.cnt AS VARCHAR), ' Silver=', CAST(s.cnt AS VARCHAR)) AS info
+FROM (SELECT ISNULL(SUM(CAST(trip_count AS BIGINT)), 0) cnt FROM gold.fact_trips) g,
      (SELECT COUNT(*) cnt FROM silver.yellow_taxi_cleaned WHERE trip_status = 'valid') s
 
 UNION ALL
 
-SELECT 'G16: Gold = Silver correction count' AS test,
+SELECT 'G15: Gold = Silver correction count' AS test,
     CASE WHEN ABS(g.cnt - s.cnt) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-    CONCAT('Gold=', g.cnt, ' Silver=', s.cnt) AS info
-FROM (SELECT SUM(correction_count) cnt FROM gold.corrections_summary) g,
+    CONCAT('Gold=', CAST(g.cnt AS VARCHAR), ' Silver=', CAST(s.cnt AS VARCHAR)) AS info
+FROM (SELECT ISNULL(SUM(CAST(correction_count AS BIGINT)), 0) cnt FROM gold.fact_corrections) g,
      (SELECT COUNT(*) cnt FROM silver.yellow_taxi_cleaned WHERE trip_status = 'correction') s
 
 UNION ALL
 
-SELECT 'G17: Gold revenue = Silver revenue' AS test,
+SELECT 'G16: Gold revenue = Silver valid revenue' AS test,
     CASE WHEN ABS(g.rev - s.rev) < 1 THEN 'PASS' ELSE 'FAIL' END AS result,
     CONCAT('Gold=', CAST(g.rev AS VARCHAR), ' Silver=', CAST(s.rev AS VARCHAR)) AS info
-FROM (SELECT SUM(total_revenue) rev FROM gold.daily_revenue_summary) g,
-     (SELECT SUM(total_amount) rev FROM silver.yellow_taxi_cleaned WHERE trip_status = 'valid') s;
+FROM (SELECT ISNULL(SUM(total_revenue), 0) rev FROM gold.fact_trips) g,
+     (SELECT ISNULL(SUM(total_amount), 0) rev FROM silver.yellow_taxi_cleaned WHERE trip_status = 'valid') s;
