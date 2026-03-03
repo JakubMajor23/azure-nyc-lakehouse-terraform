@@ -318,59 +318,24 @@ The Power BI report connects to the Gold Layer via **DirectQuery** to Azure Syna
 
 ![Power BI — Executive Overview dashboard](photos/bi_1.png)
 
-The main landing page providing a high-level summary of the entire NYC Yellow Taxi dataset.
 
-| Element | Description |
-|---------|-------------|
-| **KPI Cards** | Total Revenue ($4.78bn), Total Trips (186M), Avg Trip Cost ($25.73), Avg Tip ($3.06) — each with MoM % change |
-| **Revenue Trend (Daily)** | Dual-axis line chart showing daily Total Revenue (yellow) and Total Trips (blue) from 2021–2025. Clearly shows the COVID recovery trend and seasonal patterns |
-| **Revenue by Year** | Bar chart comparing total revenue across years — steady growth from $0.6bn (2021) to ~$1.1bn (2023–2025) |
-| **Payment Methods** | Donut chart showing payment distribution: Credit Card 77.55%, Cash 13.18%, Others 9.27% |
-| **Filters** | Year and Month slicers for interactive filtering |
 
 ### Page 2: Revenue Deep Dive
 
 ![Power BI — Revenue Deep Dive dashboard](photos/bi_2.png)
 
-A detailed breakdown of revenue components and cost efficiency metrics.
 
-| Element | Description |
-|---------|-------------|
-| **KPI Cards** | Total Revenue ($907.92M), Fare Revenue ($622.75M), Total Tips ($110.35M), Total Toll ($19.62M) — filtered view |
-| **Revenue Breakdown by Component** | Stacked area chart showing monthly Fare Revenue, Total Tips, Total Congestion, and Total Toll over time |
-| **Tip % of Fare** | Line chart showing the ratio of tips to fare over time (trending around 17–18%) |
-| **Avg Revenue per Mile** | Line chart showing revenue efficiency per mile — growth from ~$8 (2021) to ~$20 (2025) |
-| **Revenue Composition** | Donut chart — Fare Revenue 75.24%, Tips 13.33%, Congestion 9.05%, Toll 2.37% |
-| **Avg Trip Cost by Weekday** | Horizontal bar chart — Thursday is the most expensive ($26.73), Saturday the cheapest ($24.47) |
 
 ### Page 3: Zone Analysis
 
 ![Power BI — Zone Analysis dashboard](photos/bi_3.png)
 
-An in-depth look at trip patterns by NYC taxi zone — pickup and dropoff locations.
 
-| Element | Description |
-|---------|-------------|
-| **KPI Cards** | Top Pickup Zone (Upper East Side South), Top Dropoff Zone (Upper East Side South), Unique Zones (263), Avg Distance (4.18 mi) |
-| **Top 20 Pickup Zones** | Vertical bar chart — Upper East Side South leads with ~9M trips, followed by JFK Airport and Midtown Center |
-| **Top 15 Dropoff Zones** | Vertical bar chart showing the most popular dropoff zones — Upper East Side South also leads |
-| **Revenue by Zone — Treemap** | Treemap of top revenue-generating pickup zones: JFK Airport dominates (long-distance, high fare), followed by Midtown Center and Penn Station/Madison Sq |
-| **Distance vs Duration (Scatter)** | Scatter plot revealing zone characteristics — airport zones (JFK, LaGuardia) cluster at high distance/duration; Manhattan zones cluster at low distance/short duration |
-| **Filters** | Year and Month slicers for interactive filtering |
 
 ### Page 4: Temporal Patterns
 
 ![Power BI — Temporal Patterns dashboard](photos/bi_4.png)
 
-Time-based analysis of trip patterns — hourly, daily, and seasonal trends.
 
-| Element | Description |
-|---------|-------------|
-| **KPI Cards** | Peak Hour (18:00), Peak Day (Thursday), Weekend Ratio (0.27 = 27% of trips on weekends), Peak Month (October) |
-| **Trips by Hour of Day** | Column chart (0–23h) — clear bimodal pattern with morning ramp-up from 6 AM, afternoon peak at 18:00, and a quiet period from 0–5 AM |
-| **Hourly Heatmap (Day × Hour)** | Matrix with color scale (dark blue → yellow) — shows trip intensity for every day-hour combination. Busiest: Thursday/Friday 17–19h. Quietest: Sunday 3–5 AM |
-| **Trips by Day of Week** | Bar chart — Thursday is the busiest day, Sunday the quietest. Weekdays consistently outperform weekends |
-| **Monthly Seasonality** | Multi-line chart (one line per year 2021–2025) — clear seasonal pattern: dip in January/February, peak in October. 2021 line is visibly lower (COVID recovery) |
-| **Filters** | Year and Month slicers for interactive filtering |
 
 
