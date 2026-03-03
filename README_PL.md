@@ -373,4 +373,4 @@ Analiza wzorców czasowych — trendy godzinowe, dzienne i sezonowe.
 | **Monthly Seasonality** | Wykres wieloliniowy (linia na rok 2021–2025) — wyraźny wzorzec sezonowy: spadek w styczniu/lutym, szczyt w październiku. Linia 2021 wyraźnie niżej (odbudowa po COVID) |
 | **Filtry** | Slicery Year i Month do interaktywnego filtrowania |
 
-> 📖 **Instrukcje budowy Stron 3 i 4:** [POWERBI_GUIDE.md](POWERBI_GUIDE.md)
+
