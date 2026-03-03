@@ -373,4 +373,4 @@ Time-based analysis of trip patterns — hourly, daily, and seasonal trends.
 | **Monthly Seasonality** | Multi-line chart (one line per year 2021–2025) — clear seasonal pattern: dip in January/February, peak in October. 2021 line is visibly lower (COVID recovery) |
 | **Filters** | Year and Month slicers for interactive filtering |
 
-> 📖 **Build instructions for Pages 3 and 4:** [POWERBI_GUIDE.md](POWERBI_GUIDE.md)
+
