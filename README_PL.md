@@ -318,59 +318,23 @@ Raport Power BI łączy się z warstwą Gold przez **DirectQuery** do Azure Syna
 
 ![Power BI — Executive Overview dashboard](photos/bi_1.png)
 
-Główna strona podsumowująca cały zbiór danych NYC Yellow Taxi.
-
-| Element | Opis |
-|---------|------|
-| **Karty KPI** | Total Revenue ($4,78bn), Total Trips (186M), Avg Trip Cost ($25,73), Avg Tip ($3,06) — każda ze zmianą MoM % |
-| **Revenue Trend (Daily)** | Wykres liniowy z podwójną osią: dzienny Total Revenue (żółty) i Total Trips (niebieski) za lata 2021–2025. Widoczny trend odbudowy po COVID i wzorce sezonowe |
-| **Revenue by Year** | Wykres słupkowy porównujący roczne przychody — stały wzrost z $0,6bn (2021) do ~$1,1bn (2023–2025) |
-| **Payment Methods** | Donut chart: Credit Card 77,55%, Cash 13,18%, Others 9,27% |
-| **Filtry** | Slicery Year i Month do interaktywnego filtrowania |
 
 ### Strona 2: Revenue Deep Dive
 
 ![Power BI — Revenue Deep Dive dashboard](photos/bi_2.png)
 
-Szczegółowy rozbiórt komponentów przychodów i metryk efektywności kosztowej.
 
-| Element | Opis |
-|---------|------|
-| **Karty KPI** | Total Revenue ($907,92M), Fare Revenue ($622,75M), Total Tips ($110,35M), Total Toll ($19,62M) — widok z filtrami |
-| **Revenue Breakdown by Component** | Stacked area chart: miesięczny Fare Revenue, Total Tips, Total Congestion i Total Toll w czasie |
-| **Tip % of Fare** | Wykres liniowy pokazujący stosunek napiwków do taryfy (trend ~17–18%) |
-| **Avg Revenue per Mile** | Wykres liniowy — przychód na milę, wzrost z ~$8 (2021) do ~$20 (2025) |
-| **Revenue Composition** | Donut chart — Fare Revenue 75,24%, Tips 13,33%, Congestion 9,05%, Toll 2,37% |
-| **Avg Trip Cost by Weekday** | Wykres słupkowy poziomy — czwartek najdroższy ($26,73), sobota najtańsza ($24,47) |
 
 ### Strona 3: Zone Analysis
 
 ![Power BI — Zone Analysis dashboard](photos/bi_3.png)
 
-Dogłębna analiza wzorców przejazdów wg stref taksówkowych NYC — lokalizacje odbioru i docelowe.
 
-| Element | Opis |
-|---------|------|
-| **Karty KPI** | Top Pickup Zone (Upper East Side South), Top Dropoff Zone (Upper East Side South), Unique Zones (263), Avg Distance (4,18 mi) |
-| **Top 20 Pickup Zones** | Wykres słupkowy pionowy — Upper East Side South prowadzi z ~9M przejazdów, za nim JFK Airport i Midtown Center |
-| **Top 15 Dropoff Zones** | Wykres słupkowy pokazujący najpopularniejsze strefy docelowe — Upper East Side South również prowadzi |
-| **Revenue by Zone — Treemap** | Treemapa najlepiej zarabiających stref: JFK Airport dominuje (długie dystanse, wysokie taryfy), za nim Midtown Center i Penn Station/Madison Sq |
-| **Distance vs Duration (Scatter)** | Scatter plot ujawniający charakterystyki stref — strefy lotniskowe (JFK, LaGuardia) grupują się przy dużym dystansie/czasie; strefy Manhattan przy krótkim dystansie/czasie |
-| **Filtry** | Slicery Year i Month do interaktywnego filtrowania |
 
 ### Strona 4: Temporal Patterns
 
 ![Power BI — Temporal Patterns dashboard](photos/bi_4.png)
 
-Analiza wzorców czasowych — trendy godzinowe, dzienne i sezonowe.
 
-| Element | Opis |
-|---------|------|
-| **Karty KPI** | Peak Hour (18:00), Peak Day (Thursday/Czwartek), Weekend Ratio (0,27 = 27% przejazdów w weekendy), Peak Month (October/Październik) |
-| **Trips by Hour of Day** | Wykres kolumnowy (0–23h) — wyraźny wzorzec bimodalny: poranny wzrost od 6:00, szczyt popołudniowy o 18:00, cisza od 0–5 rano |
-| **Hourly Heatmap (Day × Hour)** | Macierz ze skalą kolorów (ciemny niebieski → żółty) — intensywność przejazdów dla każdej kombinacji dzień-godzina. Najruchliwiej: czwartek/piątek 17–19h. Najspokojniej: niedziela 3–5 rano |
-| **Trips by Day of Week** | Wykres słupkowy — czwartek najruchliwszy, niedziela najspokojniejsza. Dni robocze konsekwentnie przewyższają weekendy |
-| **Monthly Seasonality** | Wykres wieloliniowy (linia na rok 2021–2025) — wyraźny wzorzec sezonowy: spadek w styczniu/lutym, szczyt w październiku. Linia 2021 wyraźnie niżej (odbudowa po COVID) |
-| **Filtry** | Slicery Year i Month do interaktywnego filtrowania |
 
 
