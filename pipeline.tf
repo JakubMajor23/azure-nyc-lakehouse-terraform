@@ -84,6 +84,54 @@ JSON
   schema_json = "[]"
 }
 
+resource "azurerm_data_factory_custom_dataset" "source_metadata_csv" {
+  name            = "ds_source_metadata_csv"
+  data_factory_id = azurerm_data_factory.adf.id
+  type            = "DelimitedText"
+
+  linked_service {
+    name = azurerm_data_factory_linked_custom_service.nyc_tlc_http.name
+  }
+
+  type_properties_json = <<JSON
+{
+  "location": {
+    "type": "HttpServerLocation",
+    "relativeUrl": "/misc/taxi+_zone_lookup.csv"
+  },
+  "columnDelimiter": ",",
+  "escapeChar": "\\",
+  "firstRowAsHeader": true,
+  "quoteChar": "\""
+}
+JSON
+}
+
+resource "azurerm_data_factory_custom_dataset" "sink_metadata_csv" {
+  name            = "ds_sink_metadata_csv"
+  data_factory_id = azurerm_data_factory.adf.id
+  type            = "DelimitedText"
+
+  linked_service {
+    name = azurerm_data_factory_linked_service_data_lake_storage_gen2.datalake.name
+  }
+
+  type_properties_json = <<JSON
+{
+  "location": {
+    "type": "AzureBlobFSLocation",
+    "fileSystem": "${azurerm_storage_data_lake_gen2_filesystem.bronze.name}",
+    "folderPath": "metadata",
+    "fileName": "taxi_zone_lookup.csv"
+  },
+  "columnDelimiter": ",",
+  "escapeChar": "\\",
+  "firstRowAsHeader": true,
+  "quoteChar": "\""
+}
+JSON
+}
+
 resource "azurerm_data_factory_pipeline" "ingest_single_month" {
   name            = "pl_ingest_single_month"
   data_factory_id = azurerm_data_factory.adf.id
@@ -245,6 +293,26 @@ resource "azurerm_data_factory_pipeline" "ingest_all_data" {
         }
       ]
     }
+  }
+]
+JSON
+}
+
+resource "azurerm_data_factory_pipeline" "ingest_metadata" {
+  name            = "pl_ingest_metadata"
+  data_factory_id = azurerm_data_factory.adf.id
+
+  activities_json = <<JSON
+[
+  {
+    "name": "Copy_Taxi_Zones",
+    "type": "Copy",
+    "typeProperties": {
+      "source": { "type": "DelimitedTextSource", "storeSettings": { "type": "HttpReadSettings", "requestMethod": "GET" } },
+      "sink": { "type": "DelimitedTextSink", "storeSettings": { "type": "AzureBlobFSWriteSettings" } }
+    },
+    "inputs":  [{ "referenceName": "ds_source_metadata_csv", "type": "DatasetReference" }],
+    "outputs": [{ "referenceName": "ds_sink_metadata_csv",   "type": "DatasetReference" }]
   }
 ]
 JSON

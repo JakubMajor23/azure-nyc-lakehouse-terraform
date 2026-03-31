@@ -1,6 +1,6 @@
 
 resource "azurerm_storage_account" "datalake" {
-  name                     = "st${var.project_name}${local.suffix}" # Must be globally unique
+  name                     = "st${var.project_name}${local.suffix}"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
@@ -31,3 +31,5 @@ resource "azurerm_storage_data_lake_gen2_filesystem" "synapse" {
   name               = "synapse"
   storage_account_id = azurerm_storage_account.datalake.id
 }
+
+
