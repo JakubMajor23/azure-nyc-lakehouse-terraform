@@ -1,3 +1,10 @@
+USE nyc_taxi_dwh;
+GO
+
+CREATE OR ALTER PROCEDURE silver.sp_run_tests
+AS
+BEGIN
+-- Basic Silver quality checks.
 SELECT 'S01: Silver not empty' AS test,
     CASE WHEN COUNT(*) > 0 THEN 'PASS' ELSE 'FAIL' END AS result,
     CAST(COUNT(*) AS VARCHAR) AS details
@@ -148,3 +155,5 @@ SELECT 'S18: data loss < 10%',
     CONCAT(CAST(ROUND((1.0 - CAST(s.cnt AS FLOAT) / b.cnt) * 100, 2) AS VARCHAR), '% lost')
 FROM (SELECT COUNT(*) cnt FROM bronze.vw_yellow_taxi_raw) b,
      (SELECT COUNT(*) cnt FROM silver.yellow_taxi_cleaned) s;
+END;
+GO

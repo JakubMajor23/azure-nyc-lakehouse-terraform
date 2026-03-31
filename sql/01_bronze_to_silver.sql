@@ -1,3 +1,7 @@
+USE nyc_taxi_dwh;
+GO
+
+-- Raw Bronze view over all ingested parquet files.
 CREATE OR ALTER VIEW bronze.vw_yellow_taxi_raw
 AS
 SELECT
@@ -54,58 +58,95 @@ FROM
     ) AS result;
 GO
 
-CREATE EXTERNAL TABLE silver.yellow_taxi_cleaned
-WITH (
-    LOCATION     = 'yellow_taxi_cleaned/',
-    DATA_SOURCE  = datalake_silver,
-    FILE_FORMAT  = parquet_format
-)
+-- Monthly Silver load.
+-- The procedure writes one requested month to its own partition in the Silver layer.
+CREATE OR ALTER PROCEDURE silver.sp_load_yellow_taxi_incremental
+    @TargetYear VARCHAR(4),
+    @TargetMonth VARCHAR(2)
 AS
-SELECT
-    VendorID                                          AS vendor_id,
-    PULocationID                                      AS pickup_location_id,
-    DOLocationID                                      AS dropoff_location_id,
-    tpep_pickup_datetime                              AS pickup_datetime,
-    tpep_dropoff_datetime                             AS dropoff_datetime,
-    COALESCE(CAST(CAST(passenger_count AS FLOAT) AS INT), 1)    AS passenger_count,
-    CAST(trip_distance AS DECIMAL(10,2))                        AS trip_distance_miles,
-    COALESCE(CAST(CAST(RatecodeID AS FLOAT) AS INT), 1)         AS rate_code_id,
-    COALESCE(store_and_fwd_flag, 'N')                           AS store_and_fwd_flag,
-    CAST(CAST(payment_type AS FLOAT) AS INT)                    AS payment_type,
-    CAST(fare_amount AS DECIMAL(10,2))                AS fare_amount,
-    CAST(extra AS DECIMAL(10,2))                      AS extra_amount,
-    CAST(mta_tax AS DECIMAL(10,2))                    AS mta_tax,
-    CAST(tip_amount AS DECIMAL(10,2))                 AS tip_amount,
-    CAST(tolls_amount AS DECIMAL(10,2))               AS tolls_amount,
-    CAST(improvement_surcharge AS DECIMAL(10,2))      AS improvement_surcharge,
-    CAST(total_amount AS DECIMAL(10,2))               AS total_amount,
-    COALESCE(CAST(congestion_surcharge AS DECIMAL(10,2)), 0.00) AS congestion_surcharge,
-    COALESCE(CAST(airport_fee AS DECIMAL(10,2)), 0.00)          AS airport_fee,
-    COALESCE(CAST(cbd_congestion_fee AS DECIMAL(10,2)), 0.00)   AS cbd_congestion_fee,
-    DATEDIFF(MINUTE,
-        tpep_pickup_datetime,
-        tpep_dropoff_datetime)                        AS trip_duration_minutes,
-    YEAR(tpep_pickup_datetime)                        AS trip_year,
-    MONTH(tpep_pickup_datetime)                       AS trip_month,
-    DAY(tpep_pickup_datetime)                         AS trip_day,
-    DATENAME(WEEKDAY, tpep_pickup_datetime)           AS trip_weekday,
-    DATEPART(HOUR, tpep_pickup_datetime)              AS pickup_hour,
-    CASE
-        WHEN fare_amount <= 0 OR total_amount <= 0 OR total_amount > 1000 THEN 'correction'
-        ELSE 'valid'
-    END                                               AS trip_status
+BEGIN
+    DECLARE @DynamicSQL NVARCHAR(MAX);
+    DECLARE @LocationPath VARCHAR(200) = 'yellow_taxi_cleaned/year=' + @TargetYear + '/month=' + @TargetMonth + '/';
 
-FROM bronze.vw_yellow_taxi_raw
+    -- Temporary external table used only to materialize parquet output.
+    IF EXISTS (SELECT * FROM sys.external_tables WHERE name = 'temp_incremental_write' AND schema_id = SCHEMA_ID('silver'))
+        DROP EXTERNAL TABLE silver.temp_incremental_write;
 
-WHERE 1=1
-    AND VendorID IN (1, 2)
-    AND trip_distance > 0
-    AND trip_distance < 500
-    AND tpep_dropoff_datetime > tpep_pickup_datetime
-    AND DATEDIFF(MINUTE, tpep_pickup_datetime, tpep_dropoff_datetime) BETWEEN 1 AND 1440
-    AND PULocationID BETWEEN 1 AND 265
-    AND DOLocationID BETWEEN 1 AND 265
-    AND tpep_pickup_datetime >= '2021-01-01'
-    AND tpep_pickup_datetime <  '2026-01-01'
-;
+    SET @DynamicSQL = N'
+    CREATE EXTERNAL TABLE silver.temp_incremental_write
+    WITH (
+        LOCATION     = ''' + @LocationPath + ''',
+        DATA_SOURCE  = datalake_silver,
+        FILE_FORMAT  = parquet_format
+    )
+    AS
+    SELECT
+        VendorID                                          AS vendor_id,
+        PULocationID                                      AS pickup_location_id,
+        DOLocationID                                      AS dropoff_location_id,
+        tpep_pickup_datetime                              AS pickup_datetime,
+        tpep_dropoff_datetime                             AS dropoff_datetime,
+        COALESCE(CAST(CAST(passenger_count AS FLOAT) AS INT), 1)    AS passenger_count,
+        CAST(trip_distance AS DECIMAL(10,2))                        AS trip_distance_miles,
+        COALESCE(CAST(CAST(RatecodeID AS FLOAT) AS INT), 1)         AS rate_code_id,
+        COALESCE(store_and_fwd_flag, ''N'')                         AS store_and_fwd_flag,
+        CAST(CAST(payment_type AS FLOAT) AS INT)                    AS payment_type,
+        CAST(fare_amount AS DECIMAL(10,2))                          AS fare_amount,
+        CAST(extra AS DECIMAL(10,2))                                AS extra_amount,
+        CAST(mta_tax AS DECIMAL(10,2))                              AS mta_tax,
+        CAST(tip_amount AS DECIMAL(10,2))                           AS tip_amount,
+        CAST(tolls_amount AS DECIMAL(10,2))                         AS tolls_amount,
+        CAST(improvement_surcharge AS DECIMAL(10,2))                AS improvement_surcharge,
+        CAST(total_amount AS DECIMAL(10,2))                         AS total_amount,
+        COALESCE(CAST(congestion_surcharge AS DECIMAL(10,2)), 0.00) AS congestion_surcharge,
+        COALESCE(CAST(airport_fee AS DECIMAL(10,2)), 0.00)          AS airport_fee,
+        COALESCE(CAST(cbd_congestion_fee AS DECIMAL(10,2)), 0.00)   AS cbd_congestion_fee,
+        DATEDIFF(MINUTE, tpep_pickup_datetime, tpep_dropoff_datetime) AS trip_duration_minutes,
+        YEAR(tpep_pickup_datetime)                                  AS trip_year,
+        MONTH(tpep_pickup_datetime)                                 AS trip_month,
+        DAY(tpep_pickup_datetime)                                   AS trip_day,
+        DATENAME(WEEKDAY, tpep_pickup_datetime)                     AS trip_weekday,
+        DATEPART(HOUR, tpep_pickup_datetime)                        AS pickup_hour,
+        CASE
+            WHEN fare_amount <= 0 OR total_amount <= 0 OR total_amount > 1000 THEN ''correction''
+            ELSE ''valid''
+        END                                                         AS trip_status
+
+    FROM bronze.vw_yellow_taxi_raw
+
+    WHERE source_file LIKE ''%'' + @TargetYear + ''-'' + @TargetMonth + ''%''
+        AND VendorID IN (1, 2)
+        AND trip_distance > 0
+        AND trip_distance < 500
+        AND tpep_dropoff_datetime > tpep_pickup_datetime
+        AND DATEDIFF(MINUTE, tpep_pickup_datetime, tpep_dropoff_datetime) BETWEEN 1 AND 1440
+        AND PULocationID BETWEEN 1 AND 265
+        AND DOLocationID BETWEEN 1 AND 265
+        AND tpep_pickup_datetime >= ''2021-01-01''
+        AND tpep_pickup_datetime <  ''2026-01-01''
+    ';
+
+    -- Execute the month-specific load.
+    EXEC sp_executesql @DynamicSQL;
+
+    -- Drop the temporary metadata object. Written parquet files stay in storage.
+    DROP EXTERNAL TABLE silver.temp_incremental_write;
+END;
+GO
+
+-- Logical Silver view over all generated monthly partitions.
+-- Clean up the old full-refresh object if it still exists.
+IF EXISTS (SELECT * FROM sys.external_tables WHERE name = 'yellow_taxi_cleaned' AND schema_id = SCHEMA_ID('silver'))
+    DROP EXTERNAL TABLE silver.yellow_taxi_cleaned;
+GO
+
+CREATE OR ALTER VIEW silver.yellow_taxi_cleaned
+AS
+SELECT *
+FROM
+    OPENROWSET(
+        BULK 'yellow_taxi_cleaned/year=*/month=*/*.parquet',
+        DATA_SOURCE = 'datalake_silver',
+        FORMAT = 'PARQUET'
+    ) AS result;
 GO
