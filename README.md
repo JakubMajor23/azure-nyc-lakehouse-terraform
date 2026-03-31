@@ -6,7 +6,7 @@
 A data warehouse for NYC Yellow Taxi built on Azure using the Medallion architecture (Bronze → Silver → Gold).
 
 > **Data Source:** [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
-> **Scope:** Yellow Taxi, January 2021 – November 2025 (~200M records)
+> **Configured ingestion range:** Yellow Taxi, January 2021 – December 2025 (~200M records for the full 2021-2025 range)
 
 ---
 
@@ -15,11 +15,12 @@ A data warehouse for NYC Yellow Taxi built on Azure using the Medallion architec
 1. [Architecture](#architecture)
 2. [Infrastructure (Terraform)](#infrastructure-terraform)
 3. [Ingestion — Bronze Layer](#ingestion--bronze-layer)
-4. [Transformation — Bronze → Silver](#transformation--bronze--silver)
-5. [Transformation — Silver → Gold](#transformation--silver--gold)
-6. [Data Quality Tests](#data-quality-tests)
-7. [Getting Started](#getting-started)
-8. [Power BI Dashboards](#power-bi-dashboards)
+4. [Data Profiling — Bronze Layer](#data-profiling--bronze-layer)
+5. [Transformation — Bronze → Silver](#transformation--bronze--silver)
+6. [Transformation — Silver → Gold](#transformation--silver--gold)
+7. [Data Quality Tests](#data-quality-tests)
+8. [Getting Started](#getting-started)
+9. [Power BI Dashboards](#power-bi-dashboards)
 
 
 ---
@@ -72,13 +73,19 @@ All infrastructure is defined as code (IaC) in `.tf` files:
 
 Azure Data Factory downloads Parquet files from the NYC TLC API and stores them in ADLS Gen2 (Bronze).
 
+> **Current repo state:** Terraform defines ADF pipelines for Bronze ingestion and metadata copy. Silver/Gold SQL transformations are executed manually in Synapse Studio in the current version of the project.
+
 ### Pipeline
 
 ```
-pl_ingest_year (ForEach month 01-12)
-  └── pl_ingest_single_month (Copy Activity)
-        Source: https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet
-        Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
+pl_ingest_all_data (ForEach year 2021-2025)
+  └── pl_ingest_year (ForEach month 01-12)
+        └── pl_ingest_single_month (Copy Activity)
+              Source: https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet
+              Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
+
+pl_ingest_metadata
+  └── Copy taxi_zone_lookup.csv to bronze/metadata/
 ```
 
 | Parameter | Value |
@@ -88,12 +95,38 @@ pl_ingest_year (ForEach month 01-12)
 | Timeout | 1h per file |
 | Compression | Snappy |
 
-> **Pipeline errors are caused by December 2025 files not yet being available at the time the pipeline attempted to download them.**
+> **Note:** The top-level ingestion pipeline iterates through all months in 2025. If a late-period source file is not yet available from NYC TLC at runtime, that month may fail and can be retried later.
 
 ![Azure Data Factory → Pipeline "pl_ingest_year" → editor view with ForEach](photos/adf_1.png)
 ![Azure Data Factory → Monitor → completed pipeline runs](photos/adf_2.png)
 ![Azure Portal → Storage Account → Containers → bronze → yellow_tripdata → year folder list](photos/adf_3.png)
 
+
+## Data Profiling — Bronze Layer
+
+**Script:** `sql/01a_bronze_profiling.sql`
+
+Before any cleaning, we profile the raw Bronze data to understand quality issues and justify every transformation decision. The script runs 13 analyses:
+
+| # | Analysis | Key Finding |
+|---|----------|-------------|
+| 1 | Overview | Total record count, date range, file count |
+| 2 | Records per year | Volume distribution across 2021–2025 |
+| 3 | NULL analysis | `passenger_count`, `RatecodeID`, `store_and_fwd_flag` — **~24% NULL** |
+| 4 | NULL rate per year | Identifies which years introduced the NULL problem |
+| 5 | Vendor analysis | Vendor 7 has ~100% broken timestamps |
+| 6 | Trip distance | Zero/negative distance outliers (~2.6%) |
+| 7 | Trip duration | Reversed timestamps, <1 min, >24h trips |
+| 8 | Location IDs | Values outside valid NYC TLC range (1–265) |
+| 9 | Financial anomalies | Negative fares, corrections (~8.5%) |
+| 10 | Payment type | Distribution across payment methods |
+| 11 | Date range | Records outside expected 2021–2025 window |
+| 12 | **DROP vs COALESCE** | **~24% lost with naive DROP vs ~4.5% with smart filtering** |
+| 13 | Filter impact | Per-filter breakdown of removed records |
+
+> **Key Insight (Analysis #12):** Dropping rows with NULLs would lose ~24% of all data. The COALESCE strategy in Silver preserves these records by filling NULLs with domain-appropriate defaults, reducing total loss to ~4.5%.
+
+---
 
 ## Transformation — Bronze → Silver
 
@@ -171,8 +204,11 @@ It is built as a **Star Schema** which provides native performance, easy DAX mea
 erDiagram
     dim_date ||--o{ fact_trips : date_key
     dim_payment_type ||--o{ fact_trips : payment_key
+    dim_location ||--o{ fact_trips : pickup_location_id
+    dim_location ||--o{ fact_trips : dropoff_location_id
     dim_date ||--o{ fact_corrections : date_key
     dim_payment_type ||--o{ fact_corrections : payment_key
+    dim_location ||--o{ fact_corrections : pickup_location_id
 
     dim_date {
         int date_key PK
@@ -193,11 +229,18 @@ erDiagram
         varchar payment_category
     }
 
+    dim_location {
+        int location_id PK
+        varchar borough
+        varchar zone_name
+        varchar service_zone
+    }
+
     fact_trips {
         int date_key FK
         int payment_key FK
-        int pickup_location_id
-        int dropoff_location_id
+        int pickup_location_id FK
+        int dropoff_location_id FK
         int pickup_hour
         int trip_count
         int total_passengers
@@ -223,7 +266,7 @@ erDiagram
     fact_corrections {
         int date_key FK
         int payment_key FK
-        int pickup_location_id
+        int pickup_location_id FK
         int correction_count
         decimal total_refunded_fare
         decimal total_refunded_amount
@@ -240,6 +283,9 @@ Calendar dimension with attributes such as day names, month names, and composite
 
 #### `gold.dim_payment_type`
 Payment method lookup table with mapped categories (Credit Card, Cash, Others).
+
+#### `gold.dim_location`
+Taxi zone lookup dimension with all 265 official NYC TLC zones. Contains borough name, zone name, and service zone category (Yellow Zone, Boro Zone, Airports, EWR). Data sourced from [NYC TLC Taxi Zone Lookup](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
 
 #### `gold.fact_trips`
 Central fact table with data aggregated at the *date + hour + payment + pu_location + do_location* level. Contains all metrics (fares, tips, distance, duration).
@@ -259,9 +305,22 @@ Separate table for analyzing cancellations and refunds, grouping negative trips.
 
 ![Synapse Studio → running 03_tests_silver.sql → results](photos/silver_test.png)
 
-### Gold Tests (`sql/04_tests_gold.sql`) — 16 tests
+### Gold Tests (`sql/04_tests_gold.sql`) — 21 tests
 
 ![Synapse Studio → running 04_tests_gold.sql → results](photos/gold_test.png)
+
+### ETL Audit (`sql/05_etl_audit.sql`)
+
+A post-pipeline audit snapshot that captures pipeline health in a single `gold.etl_audit` table:
+
+| Metric | Description |
+|--------|-------------|
+| Row counts | Bronze, Silver (valid/correction), Gold per table |
+| Data loss % | `(1 - Silver/Bronze) × 100` — must be ≤ 10% |
+| Revenue reconciliation | Gold revenue vs Silver valid revenue (diff < $1) |
+| Row count reconciliation | `SUM(trip_count)` in Gold = `COUNT(*)` in Silver |
+| Freshness | Days since latest record in Bronze |
+| Pipeline status | `HEALTHY` if all checks pass, `NEEDS ATTENTION` otherwise |
 
 ---
 
@@ -271,7 +330,7 @@ Separate table for analyzing cancellations and refunds, grouping negative trips.
 
 - Azure CLI (`az login`)
 - Terraform >= 1.5
-- Python 3.x + pandas (for local testing)
+- Access to Synapse Studio or another SQL client that can run the provided scripts
 
 ### Step by Step
 
@@ -285,17 +344,39 @@ terraform apply
 ```
 
 ```bash
-# 2. Ingestion — run the pipeline in ADF
-# Azure Portal → Data Factory → pl_ingest_all → Trigger
+# 2. Ingestion — run the pipelines in ADF
+# Azure Portal → Data Factory → pl_ingest_all_data → Trigger
+# Azure Portal → Data Factory → pl_ingest_metadata  → Trigger
 ```
 
 ```sql
--- 3. Synapse — run SQL scripts in order:
--- sql/00_setup.sql             ← database, credentials, data sources
--- sql/01_bronze_to_silver.sql  ← Bronze → Silver transformation
--- sql/03_tests_silver.sql      ← Silver validation
--- sql/02_silver_to_gold.sql    ← Silver → Gold transformation
--- sql/04_tests_gold.sql        ← Gold validation
+-- 3. Synapse — run SQL scripts to create views, tables, and Stored Procedures:
+-- sql/00_setup.sql              ← database, credentials, data sources, file format
+
+-- Current repo state: create schemas manually before running the remaining scripts
+CREATE SCHEMA bronze;
+CREATE SCHEMA silver;
+CREATE SCHEMA gold;
+
+-- Then run:
+-- sql/01a_bronze_profiling.sql  ← creates bronze.sp_run_profiling
+-- sql/01_bronze_to_silver.sql   ← creates view & silver.sp_load_yellow_taxi_incremental
+-- sql/03_tests_silver.sql       ← creates silver.sp_run_tests
+-- sql/02_silver_to_gold.sql     ← creates gold.sp_load_gold_layer
+-- sql/04_tests_gold.sql         ← creates gold.sp_run_tests
+-- sql/05_etl_audit.sql          ← creates gold.sp_run_etl_audit
+
+-- 4. Execute the SQL steps manually in the current version of the repo:
+EXEC bronze.sp_run_profiling;
+
+-- This procedure is parameterized by year and month.
+-- It is an incremental monthly load, but the repo does not currently include
+-- a persisted Watermark table or an ADF pipeline that orchestrates Silver/Gold.
+EXEC silver.sp_load_yellow_taxi_incremental '2021', '01';
+EXEC silver.sp_run_tests;
+EXEC gold.sp_load_gold_layer;
+EXEC gold.sp_run_tests;
+EXEC gold.sp_run_etl_audit;
 ```
 
 > **Note:** In `sql/00_setup.sql`, replace `<storage_account_name>` with the value from `terraform output datalake_name` and `<your_master_key_password>` with your own password.

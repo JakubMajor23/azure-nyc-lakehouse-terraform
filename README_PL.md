@@ -1,4 +1,4 @@
-﻿[![en](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
+[![en](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 [![pl](https://img.shields.io/badge/lang-Polski-red.svg)](README_PL.md)
 
 # Azure NYC Taxi — Data Lakehouse
@@ -6,7 +6,7 @@
 Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architekturze Medallion (Bronze → Silver → Gold).
 
 > **Źródło danych:** [NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page)
-> **Zakres:** Yellow Taxi, styczeń 2021 – listopad 2025 (~200M rekordów)
+> **Skonfigurowany zakres ingestion:** Yellow Taxi, styczeń 2021 – grudzień 2025 (~200M rekordów dla pełnego zakresu 2021-2025)
 
 ---
 
@@ -15,11 +15,12 @@ Hurtownia danych dla NYC Yellow Taxi zbudowana na platformie Azure w architektur
 1. [Architektura](#architektura)
 2. [Infrastruktura (Terraform)](#infrastruktura-terraform)
 3. [Ingestion — Bronze Layer](#ingestion--bronze-layer)
-4. [Transformacja — Bronze → Silver](#transformacja--bronze--silver)
-5. [Transformacja — Silver → Gold](#transformacja--silver--gold)
-6. [Testy jakości danych](#testy-jakości-danych)
-7. [Uruchomienie projektu](#uruchomienie-projektu)
-8. [Dashboardy Power BI](#dashboardy-power-bi)
+4. [Profilowanie danych — Bronze Layer](#profilowanie-danych--bronze-layer)
+5. [Transformacja — Bronze → Silver](#transformacja--bronze--silver)
+6. [Transformacja — Silver → Gold](#transformacja--silver--gold)
+7. [Testy jakości danych](#testy-jakości-danych)
+8. [Uruchomienie projektu](#uruchomienie-projektu)
+9. [Dashboardy Power BI](#dashboardy-power-bi)
 
 
 ---
@@ -72,13 +73,19 @@ Cała infrastruktura zdefiniowana jako kod (IaC) w plikach `.tf`:
 
 Azure Data Factory pobiera pliki Parquet z NYC TLC API i zapisuje je w ADLS Gen2 (Bronze).
 
+> **Aktualny stan repo:** Terraform definiuje pipeline'y ADF dla ingestu do Bronze oraz kopiowania metadanych. Transformacje SQL dla Silver/Gold są w obecnej wersji projektu uruchamiane ręcznie w Synapse Studio.
+
 ### Pipeline
 
 ```
-pl_ingest_year (ForEach month 01-12)
-  └── pl_ingest_single_month (Copy Activity)
-        Source: https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet
-        Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
+pl_ingest_all_data (ForEach year 2021-2025)
+  └── pl_ingest_year (ForEach month 01-12)
+        └── pl_ingest_single_month (Copy Activity)
+              Source: https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{year}-{month}.parquet
+              Sink:   bronze/yellow_tripdata/{year}/yellow_tripdata_{year}-{month}.parquet
+
+pl_ingest_metadata
+  └── Copy taxi_zone_lookup.csv do bronze/metadata/
 ```
 
 | Parametr | Wartość |
@@ -88,12 +95,38 @@ pl_ingest_year (ForEach month 01-12)
 | Timeout | 1h na plik |
 | Kompresja | Snappy |
 
-> **Błędy w pipeline wynikają z tego, że za grudzień 2025 nie ma jeszcze dostępnych plików, a pipeline próbował je pobrać.**
+> **Uwaga:** Główny pipeline ingestion iteruje po wszystkich miesiącach 2025. Jeżeli późny plik źródłowy nie jest jeszcze dostępny w NYC TLC w momencie uruchomienia, dany miesiąc może zakończyć się błędem i wymagać ponownej próby później.
 
 ![Azure Data Factory → Pipeline "pl_ingest_year" → widok edytora z ForEach](photos/adf_1.png)
 ![Azure Data Factory → Monitor → zakończone pipeline runy](photos/adf_2.png)
 ![Azure Portal → Storage Account → Containers → bronze → yellow_tripdata → lista folderów z latami](photos/adf_3.png)
 
+
+## Profilowanie danych — Bronze Layer
+
+**Skrypt:** `sql/01a_bronze_profiling.sql`
+
+Przed jakimkolwiek czyszczeniem profilujemy surowe dane Bronze, aby zrozumieć problemy z jakością i uzasadnić każdą decyzję o transformacji. Skrypt wykonuje 13 analiz:
+
+| # | Analiza | Kluczowy wynik |
+|---|---------|----------------|
+| 1 | Przegląd ogólny | Łączna liczba rekordów, zakres dat, liczba plików |
+| 2 | Rekordy per rok | Rozkład wolumenu w latach 2021–2025 |
+| 3 | Analiza NULLi | `passenger_count`, `RatecodeID`, `store_and_fwd_flag` — **~24% NULL** |
+| 4 | NULLe per rok | Które roczniki wprowadzają problem NULLi |
+| 5 | Analiza vendorów | Vendor 7 ma ~100% zepsutych dat |
+| 6 | Dystans przejazdu | Zerowy/ujemny dystans (~2.6%) |
+| 7 | Czas przejazdu | Odwrócone daty, <1 min, >24h |
+| 8 | Location ID | Wartości poza zakresem NYC TLC (1–265) |
+| 9 | Anomalie finansowe | Ujemne opłaty, korekty (~8.5%) |
+| 10 | Typ płatności | Rozkład metod płatności |
+| 11 | Zakres dat | Rekordy poza oczekiwanym oknem 2021–2025 |
+| 12 | **DROP vs COALESCE** | **~24% strata przy naiwnym DROP vs ~4.5% przy smart filtering** |
+| 13 | Wpływ filtrów | Ile rekordów usuwa każdy poszczególny filtr |
+
+> **Kluczowy wniosek (Analiza #12):** Usunięcie wierszy z NULLami spowodowałoby utratę ~24% danych. Strategia COALESCE w Silver zachowuje te rekordy, wypełniając NULLe sensownymi wartościami domyślnymi, redukując stratę do ~4.5%.
+
+---
 
 ## Transformacja — Bronze → Silver
 
@@ -171,8 +204,11 @@ Została zbudowana w **Schemacie Gwiazdy (Star Schema)** co daje natywną wydajn
 erDiagram
     dim_date ||--o{ fact_trips : date_key
     dim_payment_type ||--o{ fact_trips : payment_key
+    dim_location ||--o{ fact_trips : pickup_location_id
+    dim_location ||--o{ fact_trips : dropoff_location_id
     dim_date ||--o{ fact_corrections : date_key
     dim_payment_type ||--o{ fact_corrections : payment_key
+    dim_location ||--o{ fact_corrections : pickup_location_id
 
     dim_date {
         int date_key PK
@@ -193,11 +229,18 @@ erDiagram
         varchar payment_category
     }
 
+    dim_location {
+        int location_id PK
+        varchar borough
+        varchar zone_name
+        varchar service_zone
+    }
+
     fact_trips {
         int date_key FK
         int payment_key FK
-        int pickup_location_id
-        int dropoff_location_id
+        int pickup_location_id FK
+        int dropoff_location_id FK
         int pickup_hour
         int trip_count
         int total_passengers
@@ -223,7 +266,7 @@ erDiagram
     fact_corrections {
         int date_key FK
         int payment_key FK
-        int pickup_location_id
+        int pickup_location_id FK
         int correction_count
         decimal total_refunded_fare
         decimal total_refunded_amount
@@ -240,6 +283,9 @@ Wymiar kalendarzowy z atrybutami, np. nazwy dni, miesięcy i złączone klucze (
 
 #### `gold.dim_payment_type`
 Słownik sposobów płatności ze zmapowanymi kategoriami (Credit Card, Cash, Others).
+
+#### `gold.dim_location`
+Wymiar lokalizacji ze wszystkimi 265 oficjalnymi strefami NYC TLC. Zawiera nazwę dzielnicy (borough), nazwę strefy i kategorię serwisową (Yellow Zone, Boro Zone, Airports, EWR). Dane ze źródła [NYC TLC Taxi Zone Lookup](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
 
 #### `gold.fact_trips`
 Centralna tabela faktów z danymi agregowanymi na poziomie *date + hour + payment + pu_location + do_location*. Posiada wszystkie metryki (opłaty, napiwki, dystans, czas trwania).
@@ -259,9 +305,22 @@ Wydzielona tabela do analizy anulacji i zwrotów, grupująca negatywne przejazdy
 
 ![Synapse Studio → uruchomiony 03_tests_silver.sql → wyniki](photos/silver_test.png)
 
-### Gold Tests (`sql/04_tests_gold.sql`) — 16 testów
+### Gold Tests (`sql/04_tests_gold.sql`) — 21 testów
 
 ![Synapse Studio → uruchomiony 04_tests_gold.sql → wyniki](photos/gold_test.png)
+
+### Audyt ETL (`sql/05_etl_audit.sql`)
+
+Snapshot audytowy po zakończeniu pipeline’u, zapisuje metryki zdrowia pipeline’u w tabeli `gold.etl_audit`:
+
+| Metryka | Opis |
+|---------|------|
+| Liczba wierszy | Bronze, Silver (valid/correction), Gold per tabela |
+| Strata danych % | `(1 - Silver/Bronze) × 100` — musi być ≤ 10% |
+| Rekoncyliacja przychodów | Gold revenue vs Silver valid revenue (różnica < $1) |
+| Rekoncyliacja wierszy | `SUM(trip_count)` w Gold = `COUNT(*)` w Silver |
+| Świeżość danych | Dni od ostatniego rekordu w Bronze |
+| Status pipeline | `HEALTHY` jeśli wszystko OK, `NEEDS ATTENTION` w przeciwnym razie |
 
 ---
 
@@ -271,7 +330,7 @@ Wydzielona tabela do analizy anulacji i zwrotów, grupująca negatywne przejazdy
 
 - Azure CLI (`az login`)
 - Terraform >= 1.5
-- Python 3.x + pandas (do lokalnych testów)
+- Dostęp do Synapse Studio lub innego klienta SQL, który potrafi uruchomić dołączone skrypty
 
 ### Krok po kroku
 
@@ -285,17 +344,39 @@ terraform apply
 ```
 
 ```bash
-# 2. Ingestion — uruchom pipeline w ADF
-# Azure Portal → Data Factory → pl_ingest_all → Trigger
+# 2. Ingestion — uruchom pipeline'y w ADF
+# Azure Portal → Data Factory → pl_ingest_all_data → Trigger
+# Azure Portal → Data Factory → pl_ingest_metadata  → Trigger
 ```
 
 ```sql
--- 3. Synapse — uruchom skrypty SQL w kolejności:
--- sql/00_setup.sql        ← baza danych, credentials, data sources
--- sql/01_bronze_to_silver.sql  ← transformacja Bronze → Silver
--- sql/03_tests_silver.sql      ← walidacja Silver
--- sql/02_silver_to_gold.sql    ← transformacja Silver → Gold
--- sql/04_tests_gold.sql        ← walidacja Gold
+-- 3. Synapse — uruchom skrypty SQL, żeby utworzyć tabele, widoki i procedury:
+-- sql/00_setup.sql              ← baza danych, credentials, data sources, file format
+
+-- Aktualny stan repo: najpierw utwórz schematy ręcznie
+CREATE SCHEMA bronze;
+CREATE SCHEMA silver;
+CREATE SCHEMA gold;
+
+-- Następnie uruchom:
+-- sql/01a_bronze_profiling.sql  ← tworzy procedurę bronze.sp_run_profiling
+-- sql/01_bronze_to_silver.sql   ← tworzy widok i procedurę silver.sp_load_yellow_taxi_incremental
+-- sql/03_tests_silver.sql       ← tworzy procedurę silver.sp_run_tests
+-- sql/02_silver_to_gold.sql     ← tworzy procedurę gold.sp_load_gold_layer
+-- sql/04_tests_gold.sql         ← tworzy procedurę gold.sp_run_tests
+-- sql/05_etl_audit.sql          ← tworzy procedurę gold.sp_run_etl_audit
+
+-- 4. W obecnej wersji repo kroki SQL uruchamiane są ręcznie:
+EXEC bronze.sp_run_profiling;
+
+-- Ta procedura przyjmuje rok i miesiąc.
+-- Jest to incremental load na poziomie miesiąca, ale repo nie zawiera jeszcze
+-- trwałej tabeli Watermark ani pipeline'u ADF orkiestrującego Silver/Gold.
+EXEC silver.sp_load_yellow_taxi_incremental '2021', '01';
+EXEC silver.sp_run_tests;
+EXEC gold.sp_load_gold_layer;
+EXEC gold.sp_run_tests;
+EXEC gold.sp_run_etl_audit;
 ```
 
 > **Uwaga:** W `sql/00_setup.sql` zamień `<storage_account_name>` na wartość z `terraform output datalake_name` oraz `<your_master_key_password>` na własne hasło.
